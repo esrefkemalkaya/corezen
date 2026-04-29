@@ -1,0 +1,11 @@
+PyQt6==6.7.*
+requests==2.32.*
+watchdog==4.*
+rawpy==0.21.*
+# Dev only
+pytest==8.*
+pytest-cov==5.*
+requests-mock==1.12.*
+black==24.*
+mypy==1.11.*
+PyInstaller==6.*
