@@ -74,9 +74,9 @@ CREATE TABLE IF NOT EXISTS app_state (
     last_hole_id INTEGER,
     last_box_id INTEGER,
     updated DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (last_project_id) REFERENCES projects(id),
-    FOREIGN KEY (last_hole_id) REFERENCES holes(id),
-    FOREIGN KEY (last_box_id) REFERENCES boxes(id)
+    FOREIGN KEY (last_project_id) REFERENCES projects(id) ON DELETE SET NULL,
+    FOREIGN KEY (last_hole_id) REFERENCES holes(id) ON DELETE SET NULL,
+    FOREIGN KEY (last_box_id) REFERENCES boxes(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS schema_version (
