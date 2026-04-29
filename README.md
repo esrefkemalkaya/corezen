@@ -55,9 +55,13 @@ Sub-project 1'in implementasyon planı **24 küçük task** halinde, TDD-uyumlu,
 
 Plan, Claude Code / superpowers framework ile otonom subagent çalıştırması için tasarlanmıştır ama insan geliştirici tarafından da sırayla uygulanabilir.
 
+## Katkıda Bulunma
+
+Bkz. [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ## Lisans
 
-Henüz lisans atanmadı.
+[MIT](LICENSE) — telifsiz, ticari kullanıma uygun.
 
 ## İletişim
 
