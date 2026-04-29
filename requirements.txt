@@ -2,6 +2,7 @@ PyQt6==6.7.*
 requests==2.32.*
 watchdog==4.*
 rawpy==0.21.*
+numpy<2  # rawpy 0.21 wheels are built against numpy 1.x ABI
 # Dev only
 pytest==8.*
 pytest-cov==5.*
