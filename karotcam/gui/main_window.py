@@ -173,11 +173,8 @@ class MainWindow(QMainWindow):
         self._capture_thread.start()
         self._watcher_thread.start()
         self._heartbeat.start()
-        # digiCam'in writes klasörümüze inmesi için (best effort)
-        try:
-            self._client.set_session_folder(str(config.PHOTOS_RAW_DIR))
-        except CameraConnectionError as e:
-            _log.warning("session.folder ayarlanamadı: %s", e)
+        # İlk bağlantı denemesi; başarısız olursa _on_connection_changed(True) geldiğinde tekrar denenecek
+        self._apply_session_folder()
 
         if restored is not None and restored.project_id is not None:
             project = self._project_repo.get(restored.project_id)
@@ -389,10 +386,36 @@ class MainWindow(QMainWindow):
         self._status_bar.set_connection(connected)
         if connected:
             self._hide_banner()
+            self._apply_session_folder()
         else:
             self._show_banner(
                 "Kamera bağlantısı yok — kabloyu ve digiCamControl'u kontrol edin."
             )
+
+    def _apply_session_folder(self) -> None:
+        """digiCamControl'a çekim klasörünü bildir, sonra gerçek klasörü sorgula.
+
+        digiCamControl set komutunu her zaman uygulayamaz (aktif oturum kilitli olabilir).
+        Bu yüzden set'ten sonra get ile doğruluyoruz; farklıysa watcher'ı gerçek klasöre
+        yönlendiriyoruz — kullanıcı digiCamControl'dan manuel değiştirmeden de çalışabilsin.
+        """
+        target = str(config.PHOTOS_RAW_DIR)
+        try:
+            self._client.set_session_folder(target)
+            _log.info("session.folder ayarlandı: %s", target)
+        except CameraConnectionError as e:
+            _log.warning("session.folder ayarlanamadı: %s", e)
+
+        # Gerçek klasörü sorgula — set başarısız olmuş veya farklı bir klasör varsa
+        actual = self._client.get_session_folder()
+        _log.info("digiCamControl aktif klasör: %s", actual)
+        if actual and actual != target:
+            _log.warning(
+                "digiCamControl farklı klasöre yazıyor (%s), watcher oraya yönlendiriliyor", actual
+            )
+            actual_path = Path(actual)
+            actual_path.mkdir(parents=True, exist_ok=True)
+            self._watcher_worker.update_watch_dir(actual_path)
 
     def _on_watcher_died(self, msg: str) -> None:
         self._show_banner(f"Dosya izleyici çöktü: {msg}")

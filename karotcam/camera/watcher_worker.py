@@ -81,6 +81,15 @@ class WatcherWorker(QObject):
             _log.exception("watcher başlatılamadı")
             self.watcher_died.emit(str(e))
 
+    def update_watch_dir(self, new_dir: Path) -> None:
+        """Observer'ı durdur, yeni klasörü izlemeye başla. Thread-safe (Qt slot olarak çağrılabilir)."""
+        if self._dir == new_dir:
+            return
+        self.stop()
+        self._dir = new_dir
+        self.start()
+        _log.info("watcher yeni klasöre taşındı: %s", new_dir)
+
     def stop(self) -> None:
         if self._observer is not None:
             self._observer.stop()

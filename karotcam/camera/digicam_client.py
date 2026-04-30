@@ -22,6 +22,7 @@ class DigiCamClient(Protocol):
     def ping(self) -> bool: ...
     def capture(self) -> None: ...
     def set_session_folder(self, path: str) -> None: ...
+    def get_session_folder(self) -> str | None: ...
     def get_liveview_jpeg(self) -> bytes | None: ...
 
 
@@ -84,6 +85,21 @@ class DigiCamHTTPClient:
                 f"set session.folder HTTP {r.status_code}"
             )
 
+    def get_session_folder(self) -> str | None:
+        """digiCamControl'un aktif download klasörünü döndür. Hata halinde None."""
+        try:
+            r = self._session.get(
+                self._base,
+                params={"slc": "get", "param1": "session.folder"},
+                timeout=self._timeout,
+            )
+            if r.status_code == 200:
+                folder = r.text.strip()
+                return folder if folder else None
+        except requests.exceptions.RequestException:
+            pass
+        return None
+
     def get_liveview_jpeg(self) -> bytes | None:
         """Tek liveview frame'i döndür. Hata halinde None (sessiz)."""
         try:
@@ -110,6 +126,9 @@ class MockDigiCamClient:
 
     def set_session_folder(self, path: str) -> None:
         self.session_folder = path
+
+    def get_session_folder(self) -> str | None:
+        return self.session_folder
 
     def get_liveview_jpeg(self) -> bytes | None:
         return b""
