@@ -78,11 +78,13 @@ class MainWindow(QMainWindow):
         self._client = DigiCamHTTPClient(
             base_url=config.DIGICAM_BASE_URL,
             timeout_s=config.DIGICAM_HTTP_TIMEOUT_S,
+            liveview_url=config.DIGICAM_LIVEVIEW_URL,
         )
-        # Heartbeat needs its own client to avoid contending the main one during capture
+        # Heartbeat uses its own client with a short timeout for fast-fail
         self._heartbeat_client = DigiCamHTTPClient(
             base_url=config.DIGICAM_BASE_URL,
-            timeout_s=config.DIGICAM_HTTP_TIMEOUT_S,
+            timeout_s=config.DIGICAM_HEARTBEAT_TIMEOUT_S,
+            ping_timeout_s=config.DIGICAM_HEARTBEAT_TIMEOUT_S,
         )
         self._heartbeat = Heartbeat(
             client=self._heartbeat_client,
@@ -193,8 +195,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, e) -> None:  # type: ignore[override]
         try:
-            self._heartbeat.stop()
-            self._live_view.stop()
+            self._heartbeat.stop()   # stops timer + joins heartbeat thread
+            self._live_view.stop()   # stops timer + joins fetch thread
             self._watcher_worker.stop()
             self._capture_thread.quit()
             self._capture_thread.wait(2000)

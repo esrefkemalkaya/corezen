@@ -28,9 +28,18 @@ class DigiCamClient(Protocol):
 class DigiCamHTTPClient:
     """Gerçek digiCamControl webserver istemcisi."""
 
-    def __init__(self, *, base_url: str, timeout_s: int) -> None:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        timeout_s: int,
+        liveview_url: str | None = None,
+        ping_timeout_s: int | None = None,
+    ) -> None:
         self._base = base_url.rstrip("/")
         self._timeout = timeout_s
+        self._ping_timeout = ping_timeout_s if ping_timeout_s is not None else timeout_s
+        self._liveview_url = liveview_url or f"{self._base}/liveview.jpg"
         self._session = requests.Session()
 
     def ping(self) -> bool:
@@ -38,7 +47,7 @@ class DigiCamHTTPClient:
         try:
             r = self._session.get(
                 self._base, params={"slc": "get", "param1": "lastfile"},
-                timeout=self._timeout,
+                timeout=self._ping_timeout,
             )
             return r.status_code == 200
         except requests.exceptions.RequestException:
@@ -78,9 +87,7 @@ class DigiCamHTTPClient:
     def get_liveview_jpeg(self) -> bytes | None:
         """Tek liveview frame'i döndür. Hata halinde None (sessiz)."""
         try:
-            r = self._session.get(
-                f"{self._base}/liveview.jpg", timeout=self._timeout
-            )
+            r = self._session.get(self._liveview_url, timeout=self._timeout)
             if r.status_code != 200:
                 return None
             return r.content

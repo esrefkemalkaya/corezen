@@ -28,10 +28,12 @@ DB_PATH: Path = BASE_DIR / "karotcam.db"
 
 # digiCamControl
 DIGICAM_BASE_URL: str = "http://localhost:5513"
+DIGICAM_LIVEVIEW_URL: str = "http://localhost:5514/liveview.jpg"
 DIGICAM_HEARTBEAT_MS: int = 5000
-DIGICAM_LIVEVIEW_POLL_MS: int = 66  # ~15 fps
+DIGICAM_LIVEVIEW_POLL_MS: int = 100  # ~10 fps — less aggressive
 DIGICAM_CAPTURE_TIMEOUT_S: int = 10  # NEF disk'e bu sürede inmezse iptal
 DIGICAM_HTTP_TIMEOUT_S: int = 3
+DIGICAM_HEARTBEAT_TIMEOUT_S: int = 1  # fast-fail when disconnected
 
 # Storage
 BACKUP_RETENTION_DAYS: int = 14
