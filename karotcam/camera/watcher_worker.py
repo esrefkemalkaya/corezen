@@ -41,7 +41,12 @@ class _NEFHandler(FileSystemEventHandler):
 
 
 def _wait_until_stable(path: Path) -> bool:
-    """Aynı boyutta `_STABILIZE_POLLS` kez okunana kadar bekle."""
+    """Dosya boyutu sabitlenene ve başka süreç kilidi kalkayana kadar bekle.
+
+    Windows'ta digiCamControl dosyayı kapatmadan önce exclusive kilit tutar.
+    Boyut kontrolünün ardından exclusive open testi de yaparız — böylece
+    rename sırasında WinError 32 almayız.
+    """
     last = -1
     same = 0
     for _ in range(60):  # max ~12 sn
@@ -52,12 +57,25 @@ def _wait_until_stable(path: Path) -> bool:
         if cur == last and cur > 0:
             same += 1
             if same >= _STABILIZE_POLLS:
-                return True
+                # Boyut sabit — bir de exclusive open testi yap
+                if _can_open_exclusive(path):
+                    return True
+                # Kilit hâlâ var; saymayı sıfırla, biraz daha bekle
+                same = 0
         else:
             same = 0
             last = cur
         time.sleep(_STABILIZE_INTERVAL_S)
     return False
+
+
+def _can_open_exclusive(path: Path) -> bool:
+    """Dosyayı exclusive modda açmayı dene — başarılıysa başka kilit yok demektir."""
+    try:
+        with path.open("rb"):
+            return True
+    except OSError:
+        return False
 
 
 class WatcherWorker(QObject):

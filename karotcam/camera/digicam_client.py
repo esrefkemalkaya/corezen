@@ -6,6 +6,7 @@ Live view: `GET /liveview.jpg` (tek frame)
 from __future__ import annotations
 
 from typing import Protocol
+from urllib.parse import unquote_plus
 
 import requests
 
@@ -86,7 +87,11 @@ class DigiCamHTTPClient:
             )
 
     def get_session_folder(self) -> str | None:
-        """digiCamControl'un aktif download klasörünü döndür. Hata halinde None."""
+        """digiCamControl'un aktif download klasörünü döndür. Hata halinde None.
+
+        digiCamControl yolu URL-encode ederek döndürebilir (boşluklar → '+').
+        unquote_plus ile normal yola çeviriyoruz.
+        """
         try:
             r = self._session.get(
                 self._base,
@@ -94,7 +99,7 @@ class DigiCamHTTPClient:
                 timeout=self._timeout,
             )
             if r.status_code == 200:
-                folder = r.text.strip()
+                folder = unquote_plus(r.text.strip())
                 return folder if folder else None
         except requests.exceptions.RequestException:
             pass
