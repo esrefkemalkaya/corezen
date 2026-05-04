@@ -41,15 +41,16 @@ class _NEFHandler(FileSystemEventHandler):
 
 
 def _wait_until_stable(path: Path) -> bool:
-    """Dosya boyutu sabitlenene ve başka süreç kilidi kalkayana kadar bekle.
+    """Dosya boyutu sabitlenene ve rename kilidi kalkayana kadar bekle.
 
-    Windows'ta digiCamControl dosyayı kapatmadan önce exclusive kilit tutar.
-    Boyut kontrolünün ardından exclusive open testi de yaparız — böylece
-    rename sırasında WinError 32 almayız.
+    Windows'ta digiCamControl NEF'i yazarken exclusive yazma kilidi tutar.
+    open("rb") okuma kilidi ile başarılı olur ama rename başarısız olabilir.
+    Bu yüzden boyut stabilitesini kontrol eder, sonra rename kilidi için
+    geçici bir isim denemesi yaparız.
     """
     last = -1
     same = 0
-    for _ in range(60):  # max ~12 sn
+    for _ in range(150):  # max ~30 sn
         try:
             cur = path.stat().st_size
         except FileNotFoundError:
@@ -57,11 +58,9 @@ def _wait_until_stable(path: Path) -> bool:
         if cur == last and cur > 0:
             same += 1
             if same >= _STABILIZE_POLLS:
-                # Boyut sabit — bir de exclusive open testi yap
-                if _can_open_exclusive(path):
+                if _can_rename(path):
                     return True
-                # Kilit hâlâ var; saymayı sıfırla, biraz daha bekle
-                same = 0
+                same = 0  # kilit hâlâ var, bekle
         else:
             same = 0
             last = cur
@@ -69,12 +68,20 @@ def _wait_until_stable(path: Path) -> bool:
     return False
 
 
-def _can_open_exclusive(path: Path) -> bool:
-    """Dosyayı exclusive modda açmayı dene — başarılıysa başka kilit yok demektir."""
+def _can_rename(path: Path) -> bool:
+    """Rename kilidi serbest mi? Aynı dizinde geçici isimle rename dene, hemen geri al."""
+    tmp = path.with_suffix(".karottmp")
     try:
-        with path.open("rb"):
-            return True
+        path.rename(tmp)
+        tmp.rename(path)
+        return True
     except OSError:
+        # tmp oluşmuşsa geri al
+        if tmp.exists() and not path.exists():
+            try:
+                tmp.rename(path)
+            except OSError:
+                pass
         return False
 
 
@@ -98,6 +105,9 @@ class WatcherWorker(QObject):
         except Exception as e:
             _log.exception("watcher başlatılamadı")
             self.watcher_died.emit(str(e))
+
+    def current_dir(self) -> Path:
+        return self._dir
 
     def update_watch_dir(self, new_dir: Path) -> None:
         """Observer'ı durdur, yeni klasörü izlemeye başla. Thread-safe (Qt slot olarak çağrılabilir)."""

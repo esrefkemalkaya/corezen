@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import shutil
 import sqlite3
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -158,12 +160,23 @@ class MainWindow(QMainWindow):
         self._recent = RecentShots(max_count=config.RECENT_SHOTS_COUNT, parent=screen)
         layout.addWidget(self._recent)
 
+        hints_row_widget = QWidget(screen)
+        hints_row = QVBoxLayout(hints_row_widget)
+        hints_row.setContentsMargins(0, 0, 0, 0)
+        hints_row.setSpacing(4)
+
         self._hints = ShortcutHints(
             "[SPACE] Çek  [R] Yeniden  [ENTER] Sıradaki  "
             "[D] Düzenle  [H] Kuyu Değiştir  [ESC] Geri",
-            parent=screen,
+            parent=hints_row_widget,
         )
-        layout.addWidget(self._hints)
+        hints_row.addWidget(self._hints)
+
+        self._open_folder_btn = QPushButton("📁 Fotoğraf Klasörünü Aç", hints_row_widget)
+        self._open_folder_btn.clicked.connect(self._open_photos_folder)
+        hints_row.addWidget(self._open_folder_btn)
+
+        layout.addWidget(hints_row_widget)
 
         # eventFilter: capture ekranındaki tüm child'lardan gelen key event'ları yakala
         screen.installEventFilter(self)
@@ -333,12 +346,22 @@ class MainWindow(QMainWindow):
             _log.info("kayıt edildi: %s", target.name)
         except OSError as e:
             _log.error("dosya adı değiştirilemedi: %s → %s | %s", raw_path, target, e)
-            QMessageBox.critical(
-                self, "Hata",
-                f"Dosya kaydedilemedi — digiCamControl henüz serbest bırakmamış olabilir.\n\n"
-                f"Lütfen birkaç saniye bekleyip [SPACE] ile tekrar çekin veya [R] Yeniden'e basın.\n\n"
-                f"Hata: {e}"
-            )
+            # WinError 32 = digiCamControl henüz kilidi bırakmadı — kullanıcıya yol göster
+            err_no = getattr(e, "winerror", None) or getattr(e, "errno", None)
+            if err_no == 32:
+                msg = (
+                    f"Fotoğraf henüz hazır değil — digiCamControl dosyayı aktarıyor.\n\n"
+                    f"Birkaç saniye bekleyin, ardından [SPACE] ile tekrar çekin."
+                )
+            else:
+                msg = f"Dosya kaydedilemedi:\n{e}"
+            _log.error(msg)
+            mb = QMessageBox(QMessageBox.Icon.Warning, "Kayıt hatası", msg, parent=self)
+            mb.addButton("Tamam", QMessageBox.ButtonRole.AcceptRole)
+            open_btn = mb.addButton("Klasörü Aç", QMessageBox.ButtonRole.ActionRole)
+            mb.exec()
+            if mb.clickedButton() == open_btn:
+                subprocess.Popen(["explorer", str(raw_path.parent)])
             return
         except sqlite3.Error as e:
             QMessageBox.critical(self, "Hata", f"Veritabanı yazılamadı: {e}")
@@ -437,28 +460,20 @@ class MainWindow(QMainWindow):
                 except CameraConnectionError as e:
                     _log.warning("session.folder ayarlanamadı: %s", e)
 
+                # get → digiCamControl'un gerçekte yazdığı yolu öğren
+                # Bu yol set'ten farklı olabilir (encoding, aktif oturum kilidi)
+                # Her zaman watcher'ı bu yola yönlendir
                 actual = client.get_session_folder()
                 _log.info("digiCamControl aktif klasör: %s", actual)
                 if actual:
-                    # resolve() → gerçek Windows path'ini al (symlink/encoded farkları giderir)
                     actual_path = Path(actual)
-                    target_path = Path(target)
-                    try:
-                        actual_resolved = actual_path.resolve()
-                        target_resolved = target_path.resolve()
-                    except OSError:
-                        actual_resolved = actual_path
-                        target_resolved = target_path
-                    if actual_resolved != target_resolved:
-                        _log.warning(
-                            "digiCamControl farklı klasöre yazıyor (%s), watcher oraya yönlendiriliyor",
-                            actual_resolved,
-                        )
-                        # mkdir YAPMA — digiCamControl'un yazdığı klasör zaten var olmalı
-                        if actual_resolved.exists():
-                            watcher.update_watch_dir(actual_resolved)
-                        else:
-                            _log.warning("digiCamControl klasörü bulunamadı: %s", actual_resolved)
+                    if actual_path.exists():
+                        watcher.update_watch_dir(actual_path)
+                        _log.info("watcher yönlendirildi: %s", actual_path)
+                    else:
+                        _log.warning("digiCamControl klasörü bulunamadı: %s", actual_path)
+                        # Fallback: hedef klasörü izle
+                        watcher.update_watch_dir(Path(target))
             finally:
                 self._session_folder_busy = False
 
@@ -466,6 +481,11 @@ class MainWindow(QMainWindow):
         t.run = _worker  # type: ignore[method-assign]
         t.finished.connect(t.deleteLater)
         t.start()
+
+    def _open_photos_folder(self) -> None:
+        """Windows Explorer'da fotoğraf klasörünü aç."""
+        folder = self._watcher_worker.current_dir()
+        subprocess.Popen(["explorer", str(folder)])
 
     def _on_watcher_died(self, msg: str) -> None:
         self._show_banner(f"Dosya izleyici çöktü: {msg}")

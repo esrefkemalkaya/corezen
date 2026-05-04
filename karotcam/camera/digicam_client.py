@@ -89,8 +89,9 @@ class DigiCamHTTPClient:
     def get_session_folder(self) -> str | None:
         """digiCamControl'un aktif download klasörünü döndür. Hata halinde None.
 
-        digiCamControl yolu URL-encode ederek döndürebilir (boşluklar → '+').
-        unquote_plus ile normal yola çeviriyoruz.
+        digiCamControl yolu olduğu gibi döndürür — decode ETME.
+        digiCamControl kendi internal path'ini bu string ile yönetir;
+        decode edersek farklı fiziksel klasöre işaret eden Path elde ederiz.
         """
         try:
             r = self._session.get(
@@ -99,7 +100,7 @@ class DigiCamHTTPClient:
                 timeout=self._timeout,
             )
             if r.status_code == 200:
-                folder = unquote_plus(r.text.strip())
+                folder = r.text.strip()
                 return folder if folder else None
         except requests.exceptions.RequestException:
             pass
