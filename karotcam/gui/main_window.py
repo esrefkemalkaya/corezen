@@ -332,8 +332,12 @@ class MainWindow(QMainWindow):
             )
             _log.info("kayıt edildi: %s", target.name)
         except OSError as e:
+            _log.error("dosya adı değiştirilemedi: %s → %s | %s", raw_path, target, e)
             QMessageBox.critical(
-                self, "Hata", f"Dosya adı değiştirilemedi: {e}"
+                self, "Hata",
+                f"Dosya kaydedilemedi — digiCamControl henüz serbest bırakmamış olabilir.\n\n"
+                f"Lütfen birkaç saniye bekleyip [SPACE] ile tekrar çekin veya [R] Yeniden'e basın.\n\n"
+                f"Hata: {e}"
             )
             return
         except sqlite3.Error as e:
@@ -435,14 +439,26 @@ class MainWindow(QMainWindow):
 
                 actual = client.get_session_folder()
                 _log.info("digiCamControl aktif klasör: %s", actual)
-                if actual and actual != target:
-                    _log.warning(
-                        "digiCamControl farklı klasöre yazıyor (%s), watcher oraya yönlendiriliyor",
-                        actual,
-                    )
+                if actual:
+                    # resolve() → gerçek Windows path'ini al (symlink/encoded farkları giderir)
                     actual_path = Path(actual)
-                    actual_path.mkdir(parents=True, exist_ok=True)
-                    watcher.update_watch_dir(actual_path)
+                    target_path = Path(target)
+                    try:
+                        actual_resolved = actual_path.resolve()
+                        target_resolved = target_path.resolve()
+                    except OSError:
+                        actual_resolved = actual_path
+                        target_resolved = target_path
+                    if actual_resolved != target_resolved:
+                        _log.warning(
+                            "digiCamControl farklı klasöre yazıyor (%s), watcher oraya yönlendiriliyor",
+                            actual_resolved,
+                        )
+                        # mkdir YAPMA — digiCamControl'un yazdığı klasör zaten var olmalı
+                        if actual_resolved.exists():
+                            watcher.update_watch_dir(actual_resolved)
+                        else:
+                            _log.warning("digiCamControl klasörü bulunamadı: %s", actual_resolved)
             finally:
                 self._session_folder_busy = False
 
