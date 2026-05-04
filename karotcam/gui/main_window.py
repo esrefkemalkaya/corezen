@@ -11,7 +11,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import QEvent, QObject, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QEvent, QObject, Qt, QThread, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import (
     QLabel,
@@ -412,29 +412,44 @@ class MainWindow(QMainWindow):
             )
 
     def _apply_session_folder(self) -> None:
-        """digiCamControl'a çekim klasörünü bildir, sonra gerçek klasörü sorgula.
+        """digiCamControl'a çekim klasörünü arka planda bildir.
 
-        digiCamControl set komutunu her zaman uygulayamaz (aktif oturum kilitli olabilir).
-        Bu yüzden set'ten sonra get ile doğruluyoruz; farklıysa watcher'ı gerçek klasöre
-        yönlendiriyoruz — kullanıcı digiCamControl'dan manuel değiştirmeden de çalışabilsin.
+        HTTP çağrıları (set + get) GUI thread'ini bloklamamak için ayrı
+        bir QThread'de yapılır. Çift çağrıları önlemek için in-flight guard var.
         """
-        target = str(config.PHOTOS_RAW_DIR)
-        try:
-            self._client.set_session_folder(target)
-            _log.info("session.folder ayarlandı: %s", target)
-        except CameraConnectionError as e:
-            _log.warning("session.folder ayarlanamadı: %s", e)
+        if getattr(self, "_session_folder_busy", False):
+            return
+        self._session_folder_busy = True
 
-        # Gerçek klasörü sorgula — set başarısız olmuş veya farklı bir klasör varsa
-        actual = self._client.get_session_folder()
-        _log.info("digiCamControl aktif klasör: %s", actual)
-        if actual and actual != target:
-            _log.warning(
-                "digiCamControl farklı klasöre yazıyor (%s), watcher oraya yönlendiriliyor", actual
-            )
-            actual_path = Path(actual)
-            actual_path.mkdir(parents=True, exist_ok=True)
-            self._watcher_worker.update_watch_dir(actual_path)
+        target = str(config.PHOTOS_RAW_DIR)
+        client = self._client
+        watcher = self._watcher_worker
+
+        def _worker() -> None:
+            try:
+                try:
+                    client.set_session_folder(target)
+                    _log.info("session.folder ayarlandı: %s", target)
+                except CameraConnectionError as e:
+                    _log.warning("session.folder ayarlanamadı: %s", e)
+
+                actual = client.get_session_folder()
+                _log.info("digiCamControl aktif klasör: %s", actual)
+                if actual and actual != target:
+                    _log.warning(
+                        "digiCamControl farklı klasöre yazıyor (%s), watcher oraya yönlendiriliyor",
+                        actual,
+                    )
+                    actual_path = Path(actual)
+                    actual_path.mkdir(parents=True, exist_ok=True)
+                    watcher.update_watch_dir(actual_path)
+            finally:
+                self._session_folder_busy = False
+
+        t = QThread(self)
+        t.run = _worker  # type: ignore[method-assign]
+        t.finished.connect(t.deleteLater)
+        t.start()
 
     def _on_watcher_died(self, msg: str) -> None:
         self._show_banner(f"Dosya izleyici çöktü: {msg}")
