@@ -11,7 +11,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QEvent, QObject, Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import (
     QLabel,
@@ -160,10 +160,16 @@ class MainWindow(QMainWindow):
 
         self._hints = ShortcutHints(
             "[SPACE] Çek  [R] Yeniden  [ENTER] Sıradaki  "
-            "[D] Düzenle  [H] Kuyu Değiştir  [ESC] Çıkış",
+            "[D] Düzenle  [H] Kuyu Değiştir  [ESC] Geri",
             parent=screen,
         )
         layout.addWidget(self._hints)
+
+        # eventFilter: capture ekranındaki tüm child'lardan gelen key event'ları yakala
+        screen.installEventFilter(self)
+        for child in screen.findChildren(QWidget):
+            child.installEventFilter(self)
+
         return screen
 
     # ------------------------------------------------------------------
@@ -350,6 +356,19 @@ class MainWindow(QMainWindow):
             derinlik_bitis=self._next_box.derinlik_bitis,
         )
 
+    def _advance_box(self) -> None:
+        """ENTER: sıradaki kutu önerisini bir artır (çekim yapmadan)."""
+        if self._next_box is None:
+            return
+        span = self._next_box.derinlik_bitis - self._next_box.derinlik_baslangic
+        new_box = NextBox(
+            kutu_no=self._next_box.kutu_no + 1,
+            derinlik_baslangic=self._next_box.derinlik_bitis,
+            derinlik_bitis=self._next_box.derinlik_bitis + span,
+        )
+        self._next_box = new_box
+        self._box_form.set_suggestion(new_box)
+
     def _trigger_capture(self) -> None:
         if not self._connected:
             return  # banner zaten görünür
@@ -428,28 +447,44 @@ class MainWindow(QMainWindow):
         self._banner.setVisible(False)
 
     # ------------------------------------------------------------------
-    # Key handling — only on capture screen
+    # Key handling — eventFilter captures keys from all capture screen children
     # ------------------------------------------------------------------
+    def eventFilter(self, obj: QObject, e: QEvent) -> bool:  # type: ignore[override]
+        if (
+            e.type() == QEvent.Type.KeyPress
+            and self._stack.currentIndex() == _SCREEN_CAPTURE
+        ):
+            key = e.key()  # type: ignore[attr-defined]
+            if key == Qt.Key.Key_Space:
+                self._trigger_capture()
+                return True
+            if key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
+                # ENTER: edit modundaysa onayla, değilse sıradaki kutuya geç
+                if self._box_form.is_editing():
+                    self._box_form.confirm_edit()
+                else:
+                    self._advance_box()
+                return True
+            if key == Qt.Key.Key_R:
+                self._reshoot()
+                return True
+            if key == Qt.Key.Key_D:
+                self._box_form.enter_edit_mode()
+                return True
+            if key == Qt.Key.Key_H:
+                self._enter_hole_picker()
+                return True
+            if key == Qt.Key.Key_Escape:
+                # ESC: edit modundaysa iptal, değilse kuyu seçimine dön (çıkış yok)
+                if self._box_form.is_editing():
+                    self._box_form.cancel_edit()
+                else:
+                    self._enter_hole_picker()
+                return True
+        return super().eventFilter(obj, e)
+
     def keyPressEvent(self, e: QKeyEvent) -> None:  # type: ignore[override]
-        if self._stack.currentIndex() != _SCREEN_CAPTURE:
-            super().keyPressEvent(e)
-            return
-        key = e.key()
-        if key == Qt.Key.Key_Space:
-            self._trigger_capture()
-            return
-        if key == Qt.Key.Key_R:
-            self._reshoot()
-            return
-        if key == Qt.Key.Key_D:
-            self._box_form.enter_edit_mode()
-            return
-        if key == Qt.Key.Key_H:
-            self._enter_hole_picker()
-            return
-        if key == Qt.Key.Key_Escape:
-            self.close()
-            return
+        # eventFilter capture ekranını hallediyor; burada sadece diğer ekranlar için
         super().keyPressEvent(e)
 
 

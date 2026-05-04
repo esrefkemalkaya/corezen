@@ -78,9 +78,18 @@ class BoxForm(QWidget):
         self._dbit.setValue(box.derinlik_bitis)
         self._stack.setCurrentIndex(0)
 
+    def is_editing(self) -> bool:
+        return self._stack.currentIndex() == 1
+
     def enter_edit_mode(self) -> None:
         self._stack.setCurrentIndex(1)
         self._kutu.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def confirm_edit(self) -> None:
+        self._emit_edited()
+
+    def cancel_edit(self) -> None:
+        self._stack.setCurrentIndex(0)
 
     def _emit_edited(self) -> None:
         self.edited.emit(
